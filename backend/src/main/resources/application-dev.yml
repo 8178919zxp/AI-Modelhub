@@ -1,0 +1,41 @@
+# ============================================================
+# Development profile — Redis cache configuration
+# Usage: spring.profiles.active=dev (default)
+# ============================================================
+
+spring:
+  cache:
+    type: redis
+    redis:
+      # Shorter TTLs for faster dev iteration
+      time-to-live: 300000           # 5 min default
+      cache-null-values: false       # Don't cache null (avoids pollution)
+      use-key-prefix: true
+      key-prefix: "aimh:dev:"
+
+  data:
+    redis:
+      # 统一使用 Docker 容器 ai-modelhub-redis：宿主 6379 → 容器 6379（端口一致）。
+      # 本机 Windows 版 Redis 已于 2026-10-31 卸载；保留环境变量便于临时切换。
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: 0
+      password:
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 2
+
+# JWT token blacklist — enabled in dev to verify logout flow
+app:
+  jwt:
+    blacklist-enabled: true
+
+logging:
+  level:
+    com.aimodelhub.cache: DEBUG
+    org.springframework.cache: DEBUG
+    org.springframework.data.redis: WARN
+    com.aimodelhub.security: DEBUG

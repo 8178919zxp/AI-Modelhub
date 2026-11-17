@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.aimodelhub.agent.mapper.AgentModelProfileMapper">
+
+    <resultMap id="AgentModelProfileResult" type="com.aimodelhub.agent.entity.AgentModelProfile">
+        <id property="id" column="id"/>
+        <result property="modelId" column="model_id"/>
+        <result property="inputType" column="input_type"/>
+        <result property="requiredFields" column="required_fields"/>
+        <result property="exampleInput" column="example_input"/>
+        <result property="usageNote" column="usage_note"/>
+    </resultMap>
+
+    <select id="findAll" resultMap="AgentModelProfileResult">
+        SELECT id, model_id, input_type, required_fields, example_input, usage_note
+        FROM agent_model_profile
+    </select>
+
+    <select id="findByModelId" resultMap="AgentModelProfileResult">
+        SELECT id, model_id, input_type, required_fields, example_input, usage_note
+        FROM agent_model_profile
+        WHERE model_id = #{modelId}
+    </select>
+
+</mapper>

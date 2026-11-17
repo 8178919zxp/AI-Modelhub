@@ -1,0 +1,46 @@
+--index-url https://pypi.tuna.tsinghua.edu.cn/simple
+# Full model set requires Python 3.11 (same as model-service/Dockerfile).
+# The base models (resnet50/bert/yolov8/xgboost) also run on Python 3.8.
+# uvicorn main:app --reload --port 8001    # Web framework (run command, not a package)
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+python-multipart==0.0.19
+pydantic==2.10.3
+
+# Deep learning
+torch==2.0.1
+torchvision==0.15.2
+
+# NLP
+transformers==4.36.2
+
+# Object detection (YOLOv8)
+ultralytics==8.0.207
+
+# ML / tabular
+xgboost==2.0.3
+scikit-learn==1.3.2
+
+# Chinese text segmentation — 中文情感模型（chinese_sentiment）在 import 阶段就会用到。
+# 之前只存在于开发者本地 venv，未写进本文件，导致 Docker 镜像里
+# POST /predict/custom {model_key: chinese_sentiment} 直接 500（ModuleNotFoundError: jieba）。
+jieba==0.42.1
+
+# Image processing
+Pillow==10.0.1
+numpy==1.24.3
+
+# Utilities
+requests==2.31.0
+
+# ── Requisites for the image / custom models ────────────────────
+# Previously installed only inside model-service/Dockerfile, which made a
+# local `pip install -r requirements.txt` unable to import main.py
+# (u2net needs rembg + onnxruntime, chest_ct/flower need tensorflow .h5,
+#  weather/stock/chinese_sentiment need pandas + joblib).
+tensorflow==2.15.0
+rembg
+onnxruntime
+pandas
+joblib
+opencv-python-headless

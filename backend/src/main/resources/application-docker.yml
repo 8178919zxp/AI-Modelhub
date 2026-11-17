@@ -1,0 +1,200 @@
+# ============================================================
+# Docker profile — all service hostnames use container names
+# Usage: SPRING_PROFILES_ACTIVE=docker (set in Dockerfile ENV)
+#
+# 本文件必须**自包含**：镜像不再打入 application.yml（见 backend/.dockerignore），
+# 因此 server.port / mybatis 等基础项也在这里声明，否则容器启动会缺 mapper 配置。
+# ============================================================
+
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ai-modelhub-backend
+
+  # ── Datasource → MySQL container ────────────────────────────
+  datasource:
+    url: jdbc:mysql://mysql:3306/ai_modelhub?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true
+    username: root
+    # 必须由环境变量提供（deploy/docker-compose.yml 使用 ${VAR:?} 强制要求）。
+    # 此处刻意不写默认值：缺失时应用启动即失败，而不是静默使用示例口令。
+    password: ${MYSQL_ROOT_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      idle-timeout: 300000
+      max-lifetime: 1200000
+      connection-timeout: 10000
+      initialization-fail-timeout: 60000
+
+  # ── Redis Cache → Redis container ──────────────────────────
+  cache:
+    type: redis
+    redis:
+      time-to-live: 1800000          # 30 min default
+      cache-null-values: false
+      use-key-prefix: true
+      key-prefix: "aimh:docker:"
+
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DB:0}
+      password: ${REDIS_PASSWORD:}
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 20
+          max-idle: 10
+          min-idle: 5
+
+  servlet:
+    multipart:
+      # Keep in sync with FileStorageService.MAX_FILE_SIZE and
+      # model-service _MAX_UPLOAD_MB (5 MB). Request size adds multipart overhead.
+      max-file-size: 5MB
+      max-request-size: 6MB
+
+  # JSON serialization — null fields are omitted from every API response
+  jackson:
+    property-naming-strategy: LOWER_CAMEL_CASE
+    default-property-inclusion: non_null
+
+  # ── Spring AI · DeepSeek（容器 profile 必须自带，因为镜像不含 application.yml）──
+  ai:
+    openai:
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      api-key: ${DEEPSEEK_API_KEY:sk-not-configured}
+      chat:
+        options:
+          model: ${DEEPSEEK_MODEL:deepseek-flash}
+          temperature: 0.3
+          max-tokens: 4096
+    retry:
+      max-attempts: 2
+      backoff:
+        initial-interval: 1s
+        multiplier: 2
+  http:
+    client:
+      connect-timeout: 10s
+      read-timeout: 120s
+
+# ── MyBatis ──────────────────────────────────────────────────
+mybatis:
+  mapper-locations: classpath*:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+# ── Actuator ─────────────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+# ── MinIO → MinIO container ──────────────────────────────────
+minio:
+  endpoint: http://minio:9000
+  access-key: ${MINIO_ROOT_USER}
+  # 无默认值：缺失即启动失败，避免用示例口令连上对象存储
+  secret-key: ${MINIO_ROOT_PASSWORD}
+  bucket: ai-modelhub
+
+# ── Model Service → model-service container ──────────────────
+model-service:
+  base-url: http://model-service:8001
+
+# ── Application ──────────────────────────────────────────────
+app:
+  jwt:
+    # 无默认值：仓库里出现过示例密钥，任何硬编码回退都会让「伪造管理员令牌」成为可能。
+    # 生成方式：openssl rand -base64 32
+    secret: ${JWT_SECRET}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+    # 与 dev profile 保持一致：退出登录/改密后必须能真正吊销令牌。
+    # Redis 不可用时 TokenBlacklistService 内部会优雅降级，不会阻断登录。
+    blacklist-enabled: ${APP_JWT_BLACKLIST_ENABLED:true}
+  cors:
+    # 前端与后端同源（都由 Nginx 暴露）时，浏览器不带跨域，这份白名单只对
+    # 「前端独立端口 / 独立域名」的访问生效。换端口部署时用
+    # APP_CORS_ALLOWED_ORIGINS 覆盖，不要改代码。
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost,http://localhost:8080,http://127.0.0.1}
+  file-proxy:
+    # Proxied file URLs served via backend
+    base-url: http://localhost:8080
+  agent:
+    max-context-messages: 20
+    daily-llm-quota: 200
+    title-max-length: 30
+    sse-timeout-ms: 180000
+    max-input-chars: 4000
+    context-ttl-seconds: 7200
+    idle-timeout-seconds: 60
+    rag:
+      enabled: true
+      # 中文向量模型（BGE-small-zh-v1.5，ONNX 量化版 24MB）
+      # 文件不入库，见 backend/models/README.md 的下载说明；缺失时自动降级为纯全文检索
+      embedding-model-path: models/bge-small-zh-v1.5/model_quantized.onnx
+      embedding-vocab-path: models/bge-small-zh-v1.5/vocab.txt
+      embedding-model-name: bge-small-zh-v1.5
+      chunk-size: 400
+      chunk-overlap: 60
+      top-k: 5
+      max-context-chars: 2000
+      min-similarity: 0.42
+
+# ── SpringDoc OpenAPI ────────────────────────────────────────
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /docs
+    tags-sorter: alpha
+    operations-sorter: alpha
+    try-it-out-enabled: true
+    filter: true
+  writer-with-default-pretty-printer: true
+  default-produces-media-type: application/json
+  default-consumes-media-type: application/json
+
+openapi:
+  info:
+    title: AI ModelHub API
+    description: |
+      AI ModelHub RESTful API — Docker deployment.
+
+      ## Authentication
+      Bearer JWT token in Authorization header:
+      ```
+      Authorization: Bearer <token>
+      ```
+
+      ## Response format
+      ```json
+      { "code": 200, "message": "success", "data": { ... } }
+      ```
+    version: 0.0.1
+    contact:
+      name: AI ModelHub Team
+    license:
+      name: Apache 2.0
+      url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+# ── Logging ──────────────────────────────────────────────────
+logging:
+  level:
+    com.aimodelhub: INFO
+    com.aimodelhub.security: WARN
+    com.aimodelhub.cache: INFO
+    org.springframework.cache: WARN
+    org.springframework.data.redis: WARN
+    org.springframework.security: WARN

@@ -1,0 +1,28 @@
+# frontend
+node_modules
+dist
+.vite
+
+# java
+backend/target
+*.class
+
+# python
+model-service/.venv
+model-service/__pycache__
+model-service/.pytest_cache
+model-service/.mypy_cache
+*.pyc
+
+# model weights
+model-service/weights/*
+!model-service/weights/README.md
+
+# ide
+.idea
+.vscode
+*.iml
+
+# system
+.DS_Store
+Thumbs.db

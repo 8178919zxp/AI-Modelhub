@@ -1,0 +1,27 @@
+# =============================================================================
+# 后端镜像构建上下文排除规则
+#
+# 目的：Docker 镜像里 **绝不能** 带本地真实配置。
+# 修复前 backend/Dockerfile 直接 `COPY src ./src`，会把开发者本机的
+# application.yml（含真实 JWT 密钥、数据库口令）与 application-dev.yml
+# 一起打进镜像 —— 拿到镜像即可伪造令牌。
+#
+# 镜像内只保留：
+#   application-docker.yml   （容器内运行所需，全部读环境变量）
+#   application-prod.yml     （生产 profile，同样只读环境变量）
+#   application-example.yml  （模板，无凭据）
+# =============================================================================
+
+target/
+logs/
+*.log
+
+.idea/
+*.iml
+.vscode/
+
+src/main/resources/application.yml
+src/main/resources/application-dev.yml
+
+Dockerfile
+.dockerignore

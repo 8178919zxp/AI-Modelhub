@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="AI ModelHub —— AI 模型体验与在线推理平台，支持模型管理、在线推理、预测记录与智能助手。" />
+    <meta name="keywords" content="AI ModelHub, 模型管理, 在线推理, Spring Boot, React, FastAPI" />
+    <title>AI ModelHub · AI 模型体验与推理平台</title>
+    <!-- favicon 复用站内 logo，避免浏览器请求 /favicon.ico 得到 404 -->
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <style>
+      .checkerboard-bg {
+        background-image: linear-gradient(45deg, #e5e5e5 25%, transparent 25%),
+          linear-gradient(-45deg, #e5e5e5 25%, transparent 25%),
+          linear-gradient(45deg, transparent 75%, #e5e5e5 75%),
+          linear-gradient(-45deg, transparent 75%, #e5e5e5 75%);
+        background-size: 20px 20px;
+        background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+      }
+    </style>
+  </body>
+</html>

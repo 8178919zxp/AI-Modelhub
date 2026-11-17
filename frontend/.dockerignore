@@ -1,0 +1,10 @@
+# 构建上下文排除：镜像里只需要源码与依赖清单，不需要本地产物
+node_modules/
+dist/
+.vite/
+.env
+.env.local
+.env.development
+.env.production
+*.log
+.DS_Store

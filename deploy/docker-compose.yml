@@ -1,0 +1,219 @@
+# =============================================================================
+# AI ModelHub — Docker Compose Production Deployment
+#
+# Quick start:
+#   docker compose up -d
+#
+# Services (6):
+#   mysql:8.0         — relational database          (host 3307 → 3306)
+#   redis:7-alpine     — cache + JWT blacklist        (port 6379)
+#   minio              — S3-compatible object storage (ports 9000/9001)
+#   model-service      — FastAPI ML inference         (port 8001)
+#   backend            — Spring Boot API server       (port 8080)
+#   frontend           — Nginx + React SPA            (port 80)
+#
+# First `docker compose up -d --build` downloads ~3 GB of Python deps
+# plus ~370 MB of model weights (ResNet-50 / BERT / YOLOv8); allow 10-25 min.
+# Subsequent builds hit the Docker cache and finish in minutes.
+#
+# Access after startup:
+#   Frontend:  http://localhost
+#   Backend:   http://localhost:8080
+#   Swagger:   http://localhost:8080/docs
+#   MinIO:     http://localhost:9001
+#   Health:    http://localhost:8001/health
+# =============================================================================
+
+services:
+  # ── MySQL 8.0 ─────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: ai-modelhub-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 deploy/.env 中设置 MYSQL_ROOT_PASSWORD（参考 .env.example）}
+      MYSQL_DATABASE: ai_modelhub
+      TZ: Asia/Shanghai
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ../sql:/docker-entrypoint-initdb.d
+      # 字符集不靠挂载配置文件解决：Windows 上 bind mount 得到的文件是 0777，
+      # MySQL 会以「world-writable」为由直接忽略它（日志可查）。
+      # 改为在每个 sql/*.sql 首行写 SET NAMES utf8mb4，对任何客户端/宿主机都生效。
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    networks:
+      - aimh-net
+    # Resource limits — MySQL 8 needs ~400MB min
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+        reservations:
+          memory: 512m
+
+  # ── Redis 7 ───────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: ai-modelhub-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      # 宿主与容器同端口：本机 6379 已释放（原 Windows 版 Redis 已卸载），
+      # 便于与 application-dev.yml、云主机安全组保持同一套端口认知。
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - aimh-net
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 128m
+
+  # ── MinIO Object Storage ──────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: ai-modelhub-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?请在 deploy/.env 中设置 MINIO_ROOT_PASSWORD（参考 .env.example）}
+    ports:
+      - "9000:9000"    # S3 API
+      - "9001:9001"    # Web console
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - aimh-net
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 256m
+
+  # ── FastAPI Model Service ─────────────────────────────────────────
+  model-service:
+    build:
+      context: ../model-service
+      dockerfile: Dockerfile
+    container_name: ai-modelhub-model-service
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      - PYTHONUNBUFFERED=1
+      # 默认 false：缺 u2net.onnx 时直接判为不可用，不在首次推理时静默下载 176 MB。
+      # 确实想让它自动拉权重时设成 true（会下到容器内 ~/.u2net，重建容器后丢失）。
+      - U2NET_ALLOW_DOWNLOAD=${U2NET_ALLOW_DOWNLOAD:-false}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - aimh-net
+    # Model loading is CPU/memory intensive; warm-up takes 30-90s
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+        reservations:
+          memory: 2g
+
+  # ── Spring Boot Backend ───────────────────────────────────────────
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: ai-modelhub-backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      # Secrets are overridable via a deploy/.env file (gitignored) or shell env.
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 deploy/.env 中设置 MYSQL_ROOT_PASSWORD（参考 .env.example）}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?请在 deploy/.env 中设置 MINIO_ROOT_PASSWORD（参考 .env.example）}
+      JWT_SECRET: ${JWT_SECRET:?请在 deploy/.env 中设置 JWT_SECRET（openssl rand -base64 32）}
+      # ModelHub Copilot —— DeepSeek 密钥。留空时 Agent 对话不可用，但平台其它功能正常。
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-sk-not-configured}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-flash}
+      # 前端与后端同源（都用本 compose 的 Nginx :80）时不用配；
+      # 若改了前端端口或前后端分域名，把前端地址填进 deploy/.env，否则 POST 会 403。
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS:-}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      model-service:
+        condition: service_healthy
+    networks:
+      - aimh-net
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+        reservations:
+          memory: 512m
+
+  # ── React Frontend (Nginx) ────────────────────────────────────────
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: ai-modelhub-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - aimh-net
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+        reservations:
+          memory: 64m
+
+# ── Named Volumes ───────────────────────────────────────────────────
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local
+
+# ── Shared Network ──────────────────────────────────────────────────
+networks:
+  aimh-net:
+    driver: bridge

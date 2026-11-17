@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.aimodelhub.user.mapper.SysUserMapper">
+
+    <resultMap id="SysUserResult" type="com.aimodelhub.user.entity.SysUser">
+        <id property="id" column="id"/>
+        <result property="username" column="username"/>
+        <result property="password" column="password"/>
+        <result property="nickname" column="nickname"/>
+        <result property="avatar" column="avatar"/>
+        <result property="role" column="role"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="securityQuestion" column="security_question"/>
+        <result property="securityAnswer" column="security_answer"/>
+    </resultMap>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sys_user
+            (username, password, nickname, avatar, role,
+             security_question, security_answer, create_time, update_time)
+        VALUES
+            (#{username}, #{password}, #{nickname}, #{avatar}, #{role},
+             #{securityQuestion}, #{securityAnswer}, #{createTime}, #{updateTime})
+    </insert>
+
+    <!-- create_time is immutable after insert (matches former @Column(updatable=false)) -->
+    <update id="update">
+        UPDATE sys_user
+        SET username         = #{username},
+            password         = #{password},
+            nickname         = #{nickname},
+            avatar           = #{avatar},
+            role             = #{role},
+            security_question = #{securityQuestion},
+            security_answer  = #{securityAnswer},
+            update_time      = #{updateTime}
+        WHERE id = #{id}
+    </update>
+
+    <select id="findById" resultMap="SysUserResult">
+        SELECT id, username, password, nickname, avatar, role,
+               create_time, update_time, security_question, security_answer
+        FROM sys_user
+        WHERE id = #{id}
+    </select>
+
+    <select id="findByUsername" resultMap="SysUserResult">
+        SELECT id, username, password, nickname, avatar, role,
+               create_time, update_time, security_question, security_answer
+        FROM sys_user
+        WHERE username = #{username}
+        LIMIT 1
+    </select>
+
+    <select id="countByUsername" resultType="int">
+        SELECT COUNT(*) FROM sys_user WHERE username = #{username}
+    </select>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*) FROM sys_user
+    </select>
+
+    <select id="findAll" resultMap="SysUserResult">
+        SELECT id, username, password, nickname, avatar, role,
+               create_time, update_time, security_question, security_answer
+        FROM sys_user
+        ORDER BY id ASC
+    </select>
+
+    <select id="findAllOrderByIdAsc" resultMap="SysUserResult">
+        SELECT id, username, password, nickname, avatar, role,
+               create_time, update_time, security_question, security_answer
+        FROM sys_user
+        ORDER BY id ASC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <update id="fixNullCreateTimes">
+        UPDATE sys_user SET create_time = '2000-01-01 00:00:00' WHERE create_time IS NULL
+    </update>
+
+    <update id="fixNullUpdateTimes">
+        UPDATE sys_user SET update_time = '2000-01-01 00:00:00' WHERE update_time IS NULL
+    </update>
+
+</mapper>

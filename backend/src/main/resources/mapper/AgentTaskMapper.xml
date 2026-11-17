@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.aimodelhub.agent.mapper.AgentTaskMapper">
+
+    <resultMap id="AgentTaskResult" type="com.aimodelhub.agent.entity.AgentTask">
+        <id property="id" column="id"/>
+        <result property="taskNo" column="task_no"/>
+        <result property="userId" column="user_id"/>
+        <result property="sessionId" column="session_id"/>
+        <result property="taskType" column="task_type"/>
+        <result property="modelId" column="model_id"/>
+        <result property="modelName" column="model_name"/>
+        <result property="taskStatus" column="task_status"/>
+        <result property="inputType" column="input_type"/>
+        <result property="inputSummary" column="input_summary"/>
+        <result property="inputPayload" column="input_payload"/>
+        <result property="attachmentId" column="attachment_id"/>
+        <result property="resultSummary" column="result_summary"/>
+        <result property="resultPayload" column="result_payload"/>
+        <result property="errorMessage" column="error_message"/>
+        <result property="recordId" column="record_id"/>
+        <result property="durationMs" column="duration_ms"/>
+        <result property="confirmedAt" column="confirmed_at"/>
+        <result property="startTime" column="start_time"/>
+        <result property="endTime" column="end_time"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <sql id="columns">
+        id, task_no, user_id, session_id, task_type, model_id, model_name, task_status,
+        input_type, input_summary, input_payload, attachment_id, result_summary,
+        result_payload, error_message, record_id, duration_ms, confirmed_at,
+        start_time, end_time, create_time, update_time
+    </sql>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO agent_task
+            (task_no, user_id, session_id, task_type, model_id, model_name, task_status,
+             input_type, input_summary, input_payload, attachment_id, create_time, update_time)
+        VALUES
+            (#{taskNo}, #{userId}, #{sessionId}, #{taskType}, #{modelId}, #{modelName}, #{taskStatus},
+             #{inputType}, #{inputSummary}, #{inputPayload}, #{attachmentId}, NOW(), NOW())
+    </insert>
+
+    <select id="findById" resultMap="AgentTaskResult">
+        SELECT <include refid="columns"/> FROM agent_task WHERE id = #{id}
+    </select>
+
+    <select id="findByIdAndUser" resultMap="AgentTaskResult">
+        SELECT <include refid="columns"/>
+        FROM agent_task
+        WHERE id = #{id} AND user_id = #{userId}
+    </select>
+
+    <select id="findByUser" resultMap="AgentTaskResult">
+        SELECT <include refid="columns"/>
+        FROM agent_task
+        WHERE user_id = #{userId}
+        ORDER BY id DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 状态迁移全部带前置状态条件，靠影响行数判断是否抢到 -->
+    <update id="markConfirmed">
+        UPDATE agent_task
+        SET task_status = 'CONFIRMED', confirmed_at = NOW(), update_time = NOW()
+        WHERE id = #{id} AND user_id = #{userId} AND task_status = 'PENDING'
+    </update>
+
+    <update id="markRunning">
+        UPDATE agent_task
+        SET task_status = 'RUNNING', start_time = NOW(), update_time = NOW()
+        WHERE id = #{id} AND user_id = #{userId} AND task_status = 'CONFIRMED'
+    </update>
+
+    <update id="markSuccess">
+        UPDATE agent_task
+        SET task_status = 'SUCCESS',
+            result_summary = #{resultSummary},
+            result_payload = #{resultPayload},
+            record_id = #{recordId},
+            duration_ms = #{durationMs},
+            end_time = NOW(),
+            update_time = NOW()
+        WHERE id = #{id} AND task_status = 'RUNNING'
+    </update>
+
+    <update id="markFailed">
+        UPDATE agent_task
+        SET task_status = 'FAILED',
+            error_message = #{errorMessage},
+            duration_ms = #{durationMs},
+            end_time = NOW(),
+            update_time = NOW()
+        WHERE id = #{id} AND task_status = 'RUNNING'
+    </update>
+
+    <update id="markExpired">
+        UPDATE agent_task
+        SET task_status = 'EXPIRED', update_time = NOW()
+        WHERE id = #{id} AND task_status = 'PENDING'
+    </update>
+
+</mapper>

@@ -1,0 +1,28 @@
+# Virtual environment — rebuild from requirements.txt in image
+.venv
+venv
+env
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.eggs
+
+# IDE
+.idea
+.vscode
+*.swp
+
+# Git
+.git
+.gitignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test / dev files
+test_*.py
+tests/

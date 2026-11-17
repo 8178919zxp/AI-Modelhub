@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.aimodelhub.predict.mapper.PredictRecordMapper">
+
+    <resultMap id="PredictRecordResult" type="com.aimodelhub.predict.entity.PredictRecord">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="modelId" column="model_id"/>
+        <result property="fileUrl" column="file_url"/>
+        <result property="inputText" column="input_text"/>
+        <result property="predictResult" column="predict_result"/>
+        <result property="confidence" column="confidence"/>
+        <result property="duration" column="duration"/>
+        <result property="createTime" column="create_time"/>
+        <result property="originalFilename" column="original_filename"/>
+    </resultMap>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO predict_record
+            (user_id, model_id, file_url, input_text, predict_result,
+             confidence, duration, create_time, original_filename)
+        VALUES
+            (#{userId}, #{modelId}, #{fileUrl}, #{inputText}, #{predictResult},
+             #{confidence}, #{duration}, #{createTime}, #{originalFilename})
+    </insert>
+
+    <!--
+      Preserves the former native query ordering semantics exactly:
+      historical NULL create_time sorts to the bottom via the COALESCE sentinel.
+    -->
+    <select id="findByUserIdOrderByCreateTimeDesc" resultMap="PredictRecordResult">
+        SELECT id, user_id, model_id, file_url, input_text, predict_result,
+               confidence, duration, create_time, original_filename
+        FROM predict_record
+        WHERE user_id = #{userId}
+        ORDER BY COALESCE(create_time, '2000-01-01 00:00:00') DESC, id DESC
+    </select>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*) FROM predict_record
+    </select>
+
+    <select id="countByUserId" resultType="long">
+        SELECT COUNT(*) FROM predict_record WHERE user_id = #{userId}
+    </select>
+
+    <update id="fixNullCreateTimes">
+        UPDATE predict_record SET create_time = '2000-01-01 00:00:00' WHERE create_time IS NULL
+    </update>
+
+</mapper>

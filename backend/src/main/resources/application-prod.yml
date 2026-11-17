@@ -1,0 +1,171 @@
+# ============================================================
+# Production profile — 生产环境安全配置
+# Usage: SPRING_PROFILES_ACTIVE=prod (set in docker-compose.yml)
+# ============================================================
+
+# ── 关闭 Debug 模式 ──────────────────────────────────────────
+debug: false
+
+# ── 服务器错误处理 — 不泄露内部信息 ──────────────────────────
+server:
+  # 镜像不再打入 application.yml，端口与基础配置必须在本 profile 内自包含
+  port: 8080
+  error:
+    include-stacktrace: never       # 不返回堆栈信息
+    include-message: never           # 不返回异常消息
+    include-binding-errors: never
+    include-exception: false
+
+# ── Spring 核心配置 ──────────────────────────────────────────
+spring:
+  application:
+    name: ai-modelhub-backend
+  # ── Datasource (MySQL via Docker service name) ─────────────
+  datasource:
+    url: jdbc:mysql://mysql:3306/ai_modelhub?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true
+    username: root
+    # 无默认值：生产环境缺失口令必须启动失败，
+    # 而不是回退到仓库里出现过的开发口令（那会让生产库暴露在已知口令下）。
+    password: ${MYSQL_ROOT_PASSWORD}
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      idle-timeout: 300000
+      max-lifetime: 1200000
+
+  # ── Redis Cache ────────────────────────────────────────────
+  cache:
+    type: redis
+    redis:
+      time-to-live: 1800000          # 30 min default
+      cache-null-values: false
+      use-key-prefix: true
+      key-prefix: "aimh:prod:"
+
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DB:0}
+      password: ${REDIS_PASSWORD:}
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 20
+          max-idle: 10
+          min-idle: 5
+
+  # ── Spring AI · DeepSeek（生产 profile 自包含）──────────────
+  ai:
+    openai:
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      api-key: ${DEEPSEEK_API_KEY:sk-not-configured}
+      chat:
+        options:
+          model: ${DEEPSEEK_MODEL:deepseek-flash}
+          temperature: 0.3
+          max-tokens: 4096
+    retry:
+      max-attempts: 2
+      backoff:
+        initial-interval: 1s
+        multiplier: 2
+  http:
+    client:
+      connect-timeout: 10s
+      read-timeout: 120s
+
+# ── MyBatis ─────────────────────────────────────────────────
+mybatis:
+  mapper-locations: classpath*:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+# ── SpringDoc OpenAPI — 生产环境关闭 ─────────────────────────
+springdoc:
+  api-docs:
+    enabled: false                    # 关闭 /v3/api-docs
+  swagger-ui:
+    enabled: false                    # 关闭 Swagger UI
+
+# ── Actuator — 生产环境最小暴露 ──────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health               # 仅暴露 health（K8s/容器探针需要）
+  endpoint:
+    health:
+      show-details: never             # 不暴露组件详情
+      probes:
+        enabled: true                 # 启用就绪/存活探针
+    metrics:
+      enabled: false
+    caches:
+      enabled: false
+    prometheus:
+      enabled: false
+
+# ── MinIO (Docker service name) ──────────────────────────────
+minio:
+  endpoint: http://minio:9000
+  # 生产环境不提供任何默认凭据：缺失即启动失败（配合 ProductionSafetyValidator）
+  access-key: ${MINIO_ROOT_USER}
+  secret-key: ${MINIO_ROOT_PASSWORD}
+  bucket: ai-modelhub
+
+# ── Model service (Docker service name) ──────────────────────
+model-service:
+  base-url: http://model-service:8001
+
+# ── Application 业务配置 ─────────────────────────────────────
+app:
+  jwt:
+    # 与 docker / application-example.yml 统一使用同一个环境变量名。
+    # 此前 prod 未声明该键，会继承 application.yml 中的仓库示例密钥，
+    # 结果被 ProductionSafetyValidator 判定为「示例密钥」而拒绝启动；
+    # 即便想通过环境变量覆盖，也没有任何占位符在读它。
+    secret: ${JWT_SECRET}
+    # JWT 过期时间 — 生产环境 2 小时
+    expiration-ms: ${JWT_EXPIRATION_MS:7200000}
+    # Token 黑名单 — 生产默认开启：退出登录 / 管理员重置密码后必须真正吊销令牌。
+    # Redis 不可用时 TokenBlacklistService 内部降级（放行请求 + 告警），不会阻断登录。
+    blacklist-enabled: ${APP_JWT_BLACKLIST_ENABLED:true}
+  cors:
+    # 生产环境 CORS 白名单 — 逗号分隔，部署前替换为实际域名，
+    # 或用环境变量 APP_CORS_ALLOWED_ORIGINS 注入（推荐，避免改文件）。
+    # 不要写 "*"：allowCredentials=true 时通配符会被 Spring 与浏览器同时拒绝。
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:https://your-domain.com,https://www.your-domain.com}
+  file-proxy:
+    # Backend 代理文件 URL
+    base-url: http://localhost:8080
+  # ── ModelHub Copilot ───────────────────────────────────────
+  agent:
+    max-context-messages: 20
+    daily-llm-quota: 200
+    title-max-length: 30
+    sse-timeout-ms: 180000
+    max-input-chars: 4000
+    context-ttl-seconds: 7200
+    idle-timeout-seconds: 60
+    rag:
+      enabled: true
+      # 中文向量模型（BGE-small-zh-v1.5，ONNX 量化版 24MB）
+      # 文件不入库，见 backend/models/README.md 的下载说明；缺失时自动降级为纯全文检索
+      embedding-model-path: models/bge-small-zh-v1.5/model_quantized.onnx
+      embedding-vocab-path: models/bge-small-zh-v1.5/vocab.txt
+      embedding-model-name: bge-small-zh-v1.5
+      chunk-size: 400
+      chunk-overlap: 60
+      top-k: 5
+      max-context-chars: 2000
+      min-similarity: 0.42
+
+# ── Logging — 生产环境降低日志级别 ───────────────────────────
+logging:
+  level:
+    com.aimodelhub.cache: INFO
+    org.springframework.cache: WARN
+    org.springframework.data.redis: WARN
+    com.aimodelhub.security: WARN
+    org.springframework.security: WARN

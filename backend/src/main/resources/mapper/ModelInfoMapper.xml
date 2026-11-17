@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.aimodelhub.model.mapper.ModelInfoMapper">
+
+    <resultMap id="ModelInfoResult" type="com.aimodelhub.model.entity.ModelInfo">
+        <id property="id" column="id"/>
+        <result property="modelName" column="model_name"/>
+        <result property="modelType" column="model_type"/>
+        <result property="algorithm" column="algorithm"/>
+        <result property="accuracy" column="accuracy"/>
+        <result property="description" column="description"/>
+        <result property="cover" column="cover"/>
+        <result property="modelApi" column="model_api"/>
+        <result property="status" column="status"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO model_info
+            (model_name, model_type, algorithm, accuracy, description,
+             cover, model_api, status, create_time, update_time)
+        VALUES
+            (#{modelName}, #{modelType}, #{algorithm}, #{accuracy}, #{description},
+             #{cover}, #{modelApi}, #{status}, #{createTime}, #{updateTime})
+    </insert>
+
+    <update id="update">
+        UPDATE model_info
+        SET model_name = #{modelName},
+            model_type = #{modelType},
+            algorithm  = #{algorithm},
+            accuracy   = #{accuracy},
+            description = #{description},
+            cover      = #{cover},
+            model_api  = #{modelApi},
+            status     = #{status},
+            update_time = #{updateTime}
+        WHERE id = #{id}
+    </update>
+
+    <select id="findById" resultMap="ModelInfoResult">
+        SELECT id, model_name, model_type, algorithm, accuracy, description,
+               cover, model_api, status, create_time, update_time
+        FROM model_info
+        WHERE id = #{id}
+    </select>
+
+    <select id="findByStatus" resultMap="ModelInfoResult">
+        SELECT id, model_name, model_type, algorithm, accuracy, description,
+               cover, model_api, status, create_time, update_time
+        FROM model_info
+        WHERE status = #{status}
+    </select>
+
+    <select id="findByStatusNotOrderByIdAsc" resultMap="ModelInfoResult">
+        SELECT id, model_name, model_type, algorithm, accuracy, description,
+               cover, model_api, status, create_time, update_time
+        FROM model_info
+        WHERE status != #{status}
+        ORDER BY id ASC
+    </select>
+
+    <select id="findAll" resultMap="ModelInfoResult">
+        SELECT id, model_name, model_type, algorithm, accuracy, description,
+               cover, model_api, status, create_time, update_time
+        FROM model_info
+        ORDER BY id ASC
+    </select>
+
+    <select id="findAllOrderByIdAsc" resultMap="ModelInfoResult">
+        SELECT id, model_name, model_type, algorithm, accuracy, description,
+               cover, model_api, status, create_time, update_time
+        FROM model_info
+        ORDER BY id ASC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*) FROM model_info
+    </select>
+
+    <select id="countByStatus" resultType="long">
+        SELECT COUNT(*) FROM model_info WHERE status = #{status}
+    </select>
+
+</mapper>

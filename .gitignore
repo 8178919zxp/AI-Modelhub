@@ -1,0 +1,113 @@
+# =============================================================================
+# AI ModelHub — .gitignore
+#
+# 目标：仓库里只保留源码、依赖清单、SQL、部署模板与文档。
+# 真实凭据、构建产物、模型权重、日志、IDE 配置一律不入库。
+# =============================================================================
+
+# ── 构建产物 ─────────────────────────────────────────────────
+**/target/
+**/dist/
+**/build/
+**/.vite/
+*.class
+
+# ── 依赖目录 ─────────────────────────────────────────────────
+**/node_modules/
+**/.venv/
+**/venv/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+
+# ── 日志与运行时产物 ─────────────────────────────────────────
+**/logs/
+*.log
+hs_err_pid*.log
+replay_pid*.log
+**/uploads/
+**/temp/
+
+# ── 真实配置 / 凭据（只允许提交 *example* 与无凭据的 profile）──
+# 规则顺序很重要：先整体忽略，再用 ! 逐条放行。
+backend/src/main/resources/application*.yml
+# 以下四个文件不含任何真实凭据（口令全部读环境变量），必须入库：
+# 否则全新克隆既没有本地配置模板，也构建不出可用的容器镜像。
+!backend/src/main/resources/application-example.yml
+!backend/src/main/resources/application-dev.yml
+!backend/src/main/resources/application-docker.yml
+!backend/src/main/resources/application-prod.yml
+
+deploy/.env
+deploy/.env.*
+!deploy/.env.example
+
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# 其他常见凭据文件名
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+secrets.yml
+secrets.properties
+
+# ── 模型权重 / 数据集（体积大，按 README 自行下载）─────────────
+model-service/weights/*
+!model-service/weights/README.md
+model-service/Dataset/
+model-service/yolov8n.pt
+backend/models/**/*.onnx
+backend/models/**/*.bin
+backend/models/**/*.safetensors
+backend/models/**/vocab.txt
+backend/models/**/config.json
+*.pt
+*.pth
+*.h5
+*.onnx
+*.pb
+*.safetensors
+*.pkl
+
+# ── IDE / 编辑器 ─────────────────────────────────────────────
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+*.swp
+*~
+
+# ── OS ───────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── 本地备份 / 临时目录 ───────────────────────────────────────
+.backup/
+_pre_mybatis_backup/
+*.bak
+*.orig
+*.rej
+output/
+tmp/
+
+# ── AI 助手本地状态 ──────────────────────────────────────────
+.workbuddy/
+.claude/
+
+# ── Word 临时锁文件 ─────────────────────────────────────────
+~$*.docx
+~$*.xlsx
+~$*.pptx
+
+# ── 开发过程文档（仅本地留存，不入库）──────────────────────────
+# 阶段报告、审计与测试记录属于开发过程性文档，不进入公开仓库。
+# 项目本身的文档在 docs/；运行所需的 README 均不受此规则影响。
+GITHUB_*.md

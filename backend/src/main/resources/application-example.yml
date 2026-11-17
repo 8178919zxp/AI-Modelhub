@@ -1,0 +1,227 @@
+# =============================================================================
+# AI ModelHub — 本地配置模板（提交到仓库，不含任何真实凭据）
+#
+# 用法：
+#   1) 复制为本地配置（该文件名被 .gitignore 排除，不会入库）：
+#        cp backend/src/main/resources/application-example.yml \
+#           backend/src/main/resources/application.yml
+#   2) 替换下面所有 CHANGE_ME 占位符，或直接设置对应环境变量（环境变量优先）
+#   3) profile 说明（由 SPRING_PROFILES_ACTIVE 或 spring.profiles.active 选择）：
+#        dev    — 本机开发，localhost 直连（本文件即为 dev 的基础配置）
+#        docker — 容器内运行，主机名用 compose 服务名（见 application-docker.yml）
+#        prod   — 生产，启动时拒绝示例密钥/弱口令（见 ProductionSafetyValidator）
+#
+# 所有敏感项都通过 ${ENV:默认值} 读取，代码与仓库中不保存任何真实口令：
+#   MYSQL_ROOT_PASSWORD     MySQL root 口令
+#   REDIS_HOST/PORT/PASSWORD
+#   MINIO_ENDPOINT / MINIO_ROOT_USER / MINIO_ROOT_PASSWORD
+#   JWT_SECRET              Base64，解码后 >= 32 字节（openssl rand -base64 32）
+#   DEEPSEEK_API_KEY        Agent 对话使用；未配置时平台其它功能正常
+#   MODEL_SERVICE_BASE_URL  推理服务地址
+# =============================================================================
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ai-modelhub-backend
+
+  profiles:
+    active: dev
+
+  servlet:
+    multipart:
+      # 必须与 FileStorageService.MAX_FILE_SIZE、model-service _MAX_UPLOAD_MB 一致（5MB）
+      max-file-size: 5MB
+      max-request-size: 6MB
+
+  datasource:
+    # 主机名/端口通过环境变量覆盖，便于连不同实例
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/ai_modelhub?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true
+    username: ${MYSQL_USER:root}
+    # CHANGE_ME 只是占位符：请替换为真实口令，或设置 MYSQL_ROOT_PASSWORD 环境变量
+    password: ${MYSQL_ROOT_PASSWORD:CHANGE_ME}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      idle-timeout: 300000
+      max-lifetime: 1200000
+
+  # ── Redis 缓存 ──────────────────────────────────────────────
+  cache:
+    type: redis
+    redis:
+      time-to-live: 300000            # 5 min（dev：便于观察缓存失效）
+      cache-null-values: false
+      use-key-prefix: true
+      key-prefix: "aimh:dev:"
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DB:0}
+      password: ${REDIS_PASSWORD:}
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 2
+
+  # 注意：必须在 spring 下，写到 management 下不会生效
+  jackson:
+    property-naming-strategy: LOWER_CAMEL_CASE
+    default-property-inclusion: non_null
+
+  # ── Spring AI · DeepSeek（OpenAI 兼容协议）───────────────────
+  # 全项目只用这一个模型供应商。API Key 只从环境变量读取。
+  ai:
+    openai:
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      # 占位符让「没配 Key」时平台其它功能照常可用，Agent 侧给出明确提示
+      api-key: ${DEEPSEEK_API_KEY:sk-not-configured}
+      chat:
+        options:
+          model: ${DEEPSEEK_MODEL:deepseek-flash}
+          temperature: 0.3
+          # 思维链 token 计入 completion_tokens，给小了 content 会为空
+          max-tokens: 4096
+    retry:
+      max-attempts: 2
+      backoff:
+        initial-interval: 1s
+        multiplier: 2
+
+  http:
+    client:
+      connect-timeout: 10s
+      read-timeout: 120s
+
+mybatis:
+  mapper-locations: classpath*:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,caches,cache,prometheus
+  endpoint:
+    health:
+      show-details: always
+    metrics:
+      enabled: true
+    caches:
+      enabled: true
+    cache:
+      enabled: true
+    prometheus:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ai-modelhub
+
+model-service:
+  base-url: ${MODEL_SERVICE_BASE_URL:http://localhost:8001}
+
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  # access key >= 3 字符，secret >= 8 字符；未部署 MinIO 时上传会失败，推理不受影响
+  access-key: ${MINIO_ROOT_USER:CHANGE_ME}
+  secret-key: ${MINIO_ROOT_PASSWORD:CHANGE_ME}
+  bucket: ai-modelhub
+
+app:
+  # 仅在 sys_user 表为空时创建 admin / demo 演示账号所用口令。
+  # 生产/公开演示环境请务必通过环境变量覆盖，避免沿用默认演示口令。
+  bootstrap:
+    default-user-password: ${APP_BOOTSTRAP_DEFAULT_USER_PASSWORD:123456}
+  jwt:
+    # 必须是 Base64 编码、解码后 >= 32 字节的随机值，生成方式：
+    #   openssl rand -base64 32
+    secret: ${JWT_SECRET:CHANGE_ME}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+    # 开启后登出/改密会真正吊销令牌；Redis 不可用时内部降级，不阻断登录
+    blacklist-enabled: ${APP_JWT_BLACKLIST_ENABLED:true}
+  cors:
+    # 允许的浏览器来源，逗号分隔；部署到非 5173 端口或自有域名时改这里，
+    # 或用环境变量 APP_CORS_ALLOWED_ORIGINS 覆盖（支持传多个，逗号分隔）。
+    # 不要写 "*"：与 allowCredentials=true 冲突，浏览器与 Spring 都会拒绝。
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173}
+  file-proxy:
+    # 生成历史图片 URL 时使用的、浏览器可达的后端地址
+    base-url: ${FILE_PROXY_BASE_URL:http://localhost:8080}
+
+  # ── ModelHub Copilot ───────────────────────────────────────
+  agent:
+    max-context-messages: 20        # 送给模型的历史消息条数上限（不含 system prompt）
+    daily-llm-quota: 200            # 每用户每日大模型调用上限（Redis 计数）
+    title-max-length: 30            # 首条消息截成会话标题的最大字符数
+    sse-timeout-ms: 180000          # SSE 连接存活时间
+    max-input-chars: 4000           # 单轮输入上限
+    context-ttl-seconds: 7200       # Redis 上下文窗口 TTL
+    idle-timeout-seconds: 60        # 流式输出「等下一个 token」超时
+    rag:
+      enabled: true
+      # BGE-small-zh-v1.5（ONNX 量化版，24MB）。文件不入库，见 backend/models/README.md；
+      # 缺失时自动降级为纯全文检索。
+      embedding-model-path: models/bge-small-zh-v1.5/model_quantized.onnx
+      embedding-vocab-path: models/bge-small-zh-v1.5/vocab.txt
+      embedding-model-name: bge-small-zh-v1.5
+      chunk-size: 400
+      chunk-overlap: 60
+      top-k: 5
+      max-context-chars: 2000
+      min-similarity: 0.42
+
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /docs
+    tags-sorter: alpha
+    operations-sorter: alpha
+    try-it-out-enabled: true
+    filter: true
+  writer-with-default-pretty-printer: true
+  default-produces-media-type: application/json
+  default-consumes-media-type: application/json
+
+openapi:
+  info:
+    title: AI ModelHub API
+    description: |
+      提供模型管理、预测服务、用户管理和数据面板的 RESTful API。
+
+      ## 认证
+      除公开接口外，所有 API 需要在请求头携带 JWT Token：
+      ```
+      Authorization: Bearer <token>
+      ```
+
+      ## 响应格式
+      ```
+      { "code": 200, "message": "success", "data": { ... } }
+      ```
+    version: 0.0.1
+    contact:
+      name: AI ModelHub Team
+    license:
+      name: Apache 2.0
+      url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+logging:
+  level:
+    com.aimodelhub: INFO
+    com.aimodelhub.security: DEBUG
+    com.aimodelhub.cache: DEBUG
+    org.springframework.cache: DEBUG
+    org.springframework.data.redis: WARN

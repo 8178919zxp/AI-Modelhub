@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.aimodelhub.agent.mapper.AgentKnowledgeMapper">
+
+    <resultMap id="DocumentResult" type="com.aimodelhub.agent.entity.AgentKnowledgeDocument">
+        <id property="id" column="id"/>
+        <result property="title" column="title"/>
+        <result property="category" column="category"/>
+        <result property="sourceType" column="source_type"/>
+        <result property="originalFilename" column="original_filename"/>
+        <result property="charCount" column="char_count"/>
+        <result property="chunkCount" column="chunk_count"/>
+        <result property="status" column="status"/>
+        <result property="uploaderId" column="uploader_id"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <resultMap id="ChunkResult" type="com.aimodelhub.agent.entity.AgentKnowledgeChunk">
+        <id property="id" column="id"/>
+        <result property="docId" column="doc_id"/>
+        <result property="chunkIndex" column="chunk_index"/>
+        <result property="heading" column="heading"/>
+        <result property="content" column="content"/>
+        <result property="keywords" column="keywords"/>
+        <result property="embedding" column="embedding"/>
+        <result property="embeddingModel" column="embedding_model"/>
+        <result property="embeddingDim" column="embedding_dim"/>
+        <result property="createTime" column="create_time"/>
+        <result property="docTitle" column="doc_title"/>
+    </resultMap>
+
+    <resultMap id="HitResult" type="com.aimodelhub.agent.vo.KnowledgeHitVO">
+        <result property="chunkId" column="chunkId"/>
+        <result property="docId" column="docId"/>
+        <result property="docTitle" column="docTitle"/>
+        <result property="heading" column="heading"/>
+        <result property="content" column="content"/>
+        <result property="score" column="score"/>
+    </resultMap>
+
+    <insert id="insertDocument" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO agent_knowledge_document
+            (title, category, source_type, original_filename, char_count, chunk_count,
+             status, uploader_id, create_time, update_time)
+        VALUES
+            (#{title}, #{category}, #{sourceType}, #{originalFilename}, #{charCount}, #{chunkCount},
+             #{status}, #{uploaderId}, NOW(), NOW())
+    </insert>
+
+    <select id="findDocumentById" resultMap="DocumentResult">
+        SELECT id, title, category, source_type, original_filename, char_count, chunk_count,
+               status, uploader_id, create_time, update_time
+        FROM agent_knowledge_document
+        WHERE id = #{id} AND status = 1
+    </select>
+
+    <select id="findDocuments" resultMap="DocumentResult">
+        SELECT id, title, category, source_type, original_filename, char_count, chunk_count,
+               status, uploader_id, create_time, update_time
+        FROM agent_knowledge_document
+        WHERE status = 1
+        ORDER BY id DESC
+        LIMIT #{limit}
+    </select>
+
+    <update id="updateDocumentStats">
+        UPDATE agent_knowledge_document
+        SET chunk_count = #{chunkCount},
+            char_count  = #{charCount},
+            update_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="softDeleteDocument">
+        UPDATE agent_knowledge_document
+        SET status = 0, update_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <insert id="insertChunk" useGeneratedKeys="true" keyProperty="chunk.id">
+        INSERT INTO agent_knowledge_chunk
+            (doc_id, chunk_index, heading, content, keywords, embedding,
+             embedding_model, embedding_dim, create_time)
+        VALUES
+            (#{chunk.docId}, #{chunk.chunkIndex}, #{chunk.heading}, #{chunk.content},
+             #{chunk.keywords}, #{chunk.embedding}, #{chunk.embeddingModel},
+             #{chunk.embeddingDim}, NOW())
+    </insert>
+
+    <delete id="deleteChunksByDoc">
+        DELETE FROM agent_knowledge_chunk WHERE doc_id = #{docId}
+    </delete>
+
+    <select id="findChunksByDoc" resultMap="ChunkResult">
+        SELECT id, doc_id, chunk_index, heading, content, keywords, embedding,
+               embedding_model, embedding_dim, create_time
+        FROM agent_knowledge_chunk
+        WHERE doc_id = #{docId}
+        ORDER BY chunk_index
+    </select>
+
+    <select id="findChunksWithEmbedding" resultMap="ChunkResult">
+        SELECT c.id, c.doc_id, c.chunk_index, c.heading, c.content, c.keywords, c.embedding,
+               c.embedding_model, c.embedding_dim, c.create_time, d.title AS doc_title
+        FROM agent_knowledge_chunk c
+        JOIN agent_knowledge_document d ON d.id = c.doc_id AND d.status = 1
+        WHERE c.embedding IS NOT NULL
+        ORDER BY c.id
+        LIMIT #{limit}
+    </select>
+
+    <!--
+      中文全文检索。
+      ngram 分词器会把「图像分类」切成 图/像/分/类 等 2-gram，
+      因此即使用户问法与文档措辞不完全一致，也能命中部分片段。
+      MATCH 的列必须与 FULLTEXT 索引一致（这里只索引了 content）。
+    -->
+    <select id="searchFulltext" resultMap="HitResult">
+        SELECT c.id                  AS chunkId,
+               c.doc_id              AS docId,
+               d.title               AS docTitle,
+               c.heading             AS heading,
+               c.content             AS content,
+               MATCH(c.content) AGAINST (#{q} IN NATURAL LANGUAGE MODE) AS score
+        FROM agent_knowledge_chunk c
+        JOIN agent_knowledge_document d ON d.id = c.doc_id AND d.status = 1
+        WHERE MATCH(c.content) AGAINST (#{q} IN NATURAL LANGUAGE MODE)
+        ORDER BY score DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="countChunks" resultType="int">
+        SELECT COUNT(*) FROM agent_knowledge_chunk
+    </select>
+
+    <update id="updateChunkEmbedding">
+        UPDATE agent_knowledge_chunk
+        SET embedding       = #{embedding},
+            embedding_model = #{model},
+            embedding_dim   = #{dim}
+        WHERE id = #{id}
+    </update>
+
+</mapper>
